@@ -22,7 +22,7 @@ type Cron struct {
 
 // Job is an interface for submitted cron jobs.
 type Job interface {
-	Run()
+	Run(time.Time)
 }
 
 // The Schedule describes a job's duty cycle.
@@ -92,12 +92,12 @@ func NewWithLocation(location *time.Location) *Cron {
 }
 
 // A wrapper that turns a func() into a cron.Job
-type FuncJob func()
+type FuncJob func(time.Time)
 
-func (f FuncJob) Run() { f() }
+func (f FuncJob) Run(t time.Time) { f(t) }
 
 // AddFunc adds a func to the Cron to be run on the given schedule.
-func (c *Cron) AddFunc(spec string, cmd func()) error {
+func (c *Cron) AddFunc(spec string, cmd func(time.Time)) error {
 	return c.AddJob(spec, FuncJob(cmd))
 }
 
@@ -158,7 +158,7 @@ func (c *Cron) Run() {
 	c.run()
 }
 
-func (c *Cron) runWithRecovery(j Job) {
+func (c *Cron) runWithRecovery(j Job, t time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
 			const size = 64 << 10
@@ -167,7 +167,7 @@ func (c *Cron) runWithRecovery(j Job) {
 			c.logf("cron: panic running job: %v\n%s", r, buf)
 		}
 	}()
-	j.Run()
+	j.Run(t)
 }
 
 // Run the scheduler. this is private just due to the need to synchronize
@@ -201,7 +201,7 @@ func (c *Cron) run() {
 					if e.Next.After(now) || e.Next.IsZero() {
 						break
 					}
-					go c.runWithRecovery(e.Job)
+					go c.runWithRecovery(e.Job, e.Next)
 					e.Prev = e.Next
 					e.Next = e.Schedule.Next(now)
 				}
